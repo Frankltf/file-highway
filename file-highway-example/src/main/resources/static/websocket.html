@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>webuploader</title>
+</head>
+<!--引入CSS-->
+<link rel="stylesheet" type="text/css" href="js/webuploader.css">
+<script src="http://lib.sinaapp.com/js/jquery/2.0.2/jquery-2.0.2.min.js"></script>
+<script src="js/webuploader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@2.5.16/dist/vue.js"></script>
+<style>
+    #upload-container, #upload-list{width: 500px; margin: 0 auto; }
+    #upload-container{cursor: pointer; border-radius: 15px; background: #EEEFFF; height: 200px;}
+    #upload-list{height: 800px; border: 1px solid #EEE; border-radius: 5px; margin-top: 10px; padding: 10px 20px;}
+    #upload-container>span{widows: 100%; text-align: center; color: gray; display: block; padding-top: 15%;}
+    .upload-item{margin-top: 5px; padding-bottom: 5px; border-bottom: 1px dashed gray;}
+    .percentage{height: 5px; background: green;}
+    .btn-delete, .btn-retry{cursor: pointer; color: gray;}
+    .btn-delete:hover{color: orange;}
+    .btn-retry:hover{color: green;}
+</style>
+<!--引入JS-->
+<body>
+<input type="text" id="message">
+<input type="file" multiple="multiple" id="filechoose" onchange="uploadFile(this)">
+<input type="button" value="发送消息" onclick="sendMsg()">
+<input type="button" value="断开连接" onclick="closeMsg()">
+<div id="box"></div>
+<img id="image"src=""/>
+</body>
+
+<script>
+    var websocket = null;
+    var currentfile = null;
+    var index = 0;
+    var timestamp=new Date().getTime();
+    function uploadFile(obj){
+        var str = "";
+        debugger;
+        currentfile = obj.files;
+        var json = {originFileName:obj.files[index].name,storagePath:"/home/ipa_sudo/",fileSize:obj.files[index].size,status:20}
+        websocket.send(JSON.stringify(json));
+        index++;
+    }
+
+    // 判断当前浏览器是否支持websocket
+    if(window.WebSocket) {
+        websocket = new WebSocket("ws://aimarkdata.vmic.xyz:8088/soc/ws");
+
+        websocket.onopen = function() {
+            console.log("建立连接.");
+        }
+        websocket.onclose = function() {
+            console.log("断开连接");
+        }
+        var currentbuffer = null;
+        var slice = null;
+        var currentpoint = 0;
+
+        websocket.onmessage = function(e) {
+            debugger;
+            var res = JSON.parse(e.data)
+            console.log("接收到服务器消息:" + e.data);
+            if(res.handle && res.status == 20){
+                slice = res.chunkSize * 1024
+                var reader = new FileReader();
+                reader.onload = function(evt) {
+                    debugger;
+                    currentbuffer = evt.target.result;
+                    websocket.send(currentbuffer.slice(0,slice));
+                    currentpoint = slice;
+                    console.log("2222")
+                }
+                reader.readAsArrayBuffer(currentfile[0])
+            }else if(res.handle && res.status == 30){
+                if(currentpoint == currentbuffer.byteLength){
+                    var json = {originFileName:currentfile[0].name,storagePath:"/home/ipa_sudo/",fileSize:currentfile[0].size,status:40}
+                    websocket.send(JSON.stringify(json));
+                }
+                if(currentbuffer.byteLength > (currentpoint+slice)){
+                    debugger
+                    var newbuf = currentbuffer.slice(currentpoint,currentpoint+slice)
+                    websocket.send(newbuf);
+                    currentpoint = currentpoint+slice;
+                }else if(currentbuffer.byteLength <= (currentpoint+slice) && currentpoint != currentbuffer.byteLength){
+                    var newbuf = currentbuffer.slice(currentpoint,currentbuffer.byteLength+1)
+                    websocket.send(newbuf);
+                    currentpoint = currentbuffer.byteLength;
+
+                }
+
+            }else if(res.handle && res.status == 40){
+                // 如果有下个文件，继续传输
+                var lasttimestamp=new Date().getTime();
+                console.log(lasttimestamp - timestamp)
+                debugger;
+                if(currentfile.length > index){
+                    var json = {originFileName:currentfile[index].name,storagePath:"/home/ipa_sudo/",fileSize:currentfile[index].size,status:20}
+                    websocket.send(JSON.stringify(json));
+                    index++
+                }
+                websocket.close()
+            }
+            console.log("33333")
+        }
+    }
+    else {
+        alert("当前浏览器不支持web socket");
+    }
+
+    function closeMsg() {
+        websocket.close()
+    }
+
+    function sendMsg() {
+        var message = document.getElementById("message");
+        websocket.send(message.value);
+    }
+</script>
+</html>
